@@ -12,7 +12,7 @@ def is_positive_definite_matrix(matrix):
     eigen_values, eigen_vectors = np.linalg.eig(matrix)
     eigen_values = np.round(eigen_values, 2)
 
-    if eigen_values.all() > 0:
+    if (eigen_values > 0).all():
         print("It's PD because all of it's eigen values {} are positive".format(eigen_values))
     else:
         print("It's not PD because all of it's eigen values {} are not positive".format(eigen_values))
