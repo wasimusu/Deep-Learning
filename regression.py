@@ -12,7 +12,7 @@ np.random.seed(3)
 
 # Define the parameters of the logger - filename, loggername, mode of writing, level of logging
 log_filename = 'regression.csv'
-logging.basicConfig(filename=log_filename, filemode='a', level=logging.DEBUG)
+logging.basicConfig(filename=log_filename, filemode='a', level=logging.CRITICAL)
 logging.info(",Data, Poly_Degree, Fit, MSE, TRAIN_ERROR_PER_PREDICTION, TEST_ERROR_PER_PREDICTION, COEFFS")
 
 
@@ -26,6 +26,10 @@ def vander_matrix(X, degree=4):
     v[:, degree] = 1
     for i in range(0, degree):
         v[:, i] = X ** (degree - i)
+
+    # print("Self : ", np.round(v, 2))
+    # print("Numpy :", np.round(np.vander(X, degree), 2))
+    # print()
     return v
 
 
@@ -132,12 +136,16 @@ if __name__ == '__main__':
 
         for index, degree in enumerate(degrees):
             weight, mse = linear_regression(X, y, degree)
+
+            print(np.polyfit(X, y, degree))
+            print(weight)
+            print()
+
             weights.append(weight)
             plt.scatter(X, fit(X, weight), c=color[index + 1], label='1')
             fitting, train_error, test_error = check_fit(X, y, test_data[i][0], test_data[i][1], weight)
-            # print(
-            # "Dataset : {}, Degree : {}, Fit : {}, MSE : {}, Coeffs : {} \tTrain Error {} Test Error : {}".format(i, degree,
-            # fitting, np.round(mse,3), np.round(weight,3), np.round(train_error,3),np.round(test_error,3)))
+            print("Dataset : {}, Degree : {}, Fit : {}, MSE : {}, Coeffs : {} \tTrain Error {} Test Error : {}".format(i, degree,
+            fitting, np.round(mse,3), np.round(weight,3), np.round(train_error,3),np.round(test_error,3)))
             logging.info(
             ",{}, {}, {}, {}, {}, {}, {}".format(properties[i], degree,
             fitting, np.round(mse,3), np.round(train_error,3),np.round(test_error,3), np.round(weight,3)))
@@ -145,3 +153,4 @@ if __name__ == '__main__':
             # plt.show()
             # plt.pause(1)
             print()
+        break
