@@ -80,13 +80,16 @@ def cross_validate(X, y, coeff, sigma):
     # The errors has been normalized to length so that lengthy vectors do not have higher errors
     train_error = np.sum((y - y_fitted) ** 2) / len(X)
 
+    # Generating 300 sample points from the same distribution to check the fit
     test_X, test_y = generate_data(300, sigma)
     test_y_fitted = predict(test_X, coeff)
     test_error = np.sum((test_y - test_y_fitted) ** 2) / len(test_y)
 
     fitting_type = "Overfit"
-    if test_error < train_error:
-        fitting_type = "Underfit"
+    if test_error - train_error <= 0.01:
+        fitting_type = "Appropriate"
+    elif test_error < train_error:
+        fitting_type = 'Underfit'
 
     return fitting_type, train_error, test_error
 
@@ -99,6 +102,10 @@ if __name__ == '__main__':
     lambdas = range(0, 10)  # reguarlization parameter
     lambdas = [0, 2, 2.5]
     lambdas = [0, 0.5, 2.5]
+    # lambdas = [0, 0.1, 3]
+    # lambdas = [1, 2, 3]
+    # lambdas = [4, 5, 6]
+
     # Make a list of types of data
     color = ['black', 'green', 'red', 'grey']
 
@@ -111,6 +118,7 @@ if __name__ == '__main__':
     plt.legend(handles=patch)
 
     # Loop over all the types of dataset we need to fit ridge regression
+    lambdas = np.linspace(0, 10, 50)
     for num_point in N:
         for sigma in sigmas:
             X, y = generate_data(num_point, sigma)
@@ -123,13 +131,13 @@ if __name__ == '__main__':
                 plt.title('Fitting polynomial eq to {}'.format(data_description))
 
                 coeff, mse = ridge_regression(X, y, degree, lambda_p=l)
-                plt.plot(X, predict(X, coeff), color=color[index + 1])
+                # plt.plot(X, predict(X, coeff), color=color[index + 1])
 
                 fitting_type, train_error, test_error = cross_validate(X, y, coeff, sigma)
                 summary = ",{}, {}, {}, {}, {}, {}, {}" \
                     .format(data_description, degree, fitting_type, np.round(mse, 3),
                             np.round(train_error, 3), np.round(test_error, 3), np.round(coeff, 3))
-                print(summary + "\n")
+                print(l, np.round(train_error-test_error, 3), summary + "\n")
                 logging.info(summary)
 
             plt.show()
