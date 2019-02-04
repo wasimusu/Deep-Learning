@@ -93,26 +93,29 @@ def cross_validate(X, y, coeff, sigma):
 
 if __name__ == '__main__':
     # Parameter defining data and the equation we're fitting
-    degree = 20  # Which degree of equation to fit the data
-    N = [300, 400, 600, 1200]
+    degree = 9  # Which degree of equation to fit the data
+    N = [15, 100]
     sigmas = [0.05]
-    lambdas = [0, 1, 2]  # reguarlization parameter
-
+    lambdas = range(0, 10)  # reguarlization parameter
+    lambdas = [0, 2, 2.5]
+    lambdas = [0, 0.5, 2.5]
     # Make a list of types of data
-    color = ['black', 'green', 'gray', 'red']
+    color = ['black', 'green', 'red', 'grey']
 
     # Legends
     patch = [
         mpatches.Patch(color=color[0], label='Original'),
-        mpatches.Patch(color=color[1], label='9 Deg lambda 0'),
-        mpatches.Patch(color=color[2], label='9 Deg lambda 1'),
-        mpatches.Patch(color=color[3], label='9 Deg lambda 2')]
+        mpatches.Patch(color=color[3], label='9 Deg lambda {}'.format(lambdas[0])),
+        mpatches.Patch(color=color[1], label='9 Deg lambda {}'.format(lambdas[1])),
+        mpatches.Patch(color=color[2], label='9 Deg lambda {}'.format(lambdas[2]))]
     plt.legend(handles=patch)
 
     # Loop over all the types of dataset we need to fit ridge regression
     for num_point in N:
         for sigma in sigmas:
             X, y = generate_data(num_point, sigma)
+            X, y = np.sort(np.array([X, y]))  # Sort the generated data points
+
             plt.scatter(X, y, color=color[0], linewidths=0.01)
 
             for index, l in enumerate(lambdas):
@@ -120,7 +123,7 @@ if __name__ == '__main__':
                 plt.title('Fitting polynomial eq to {}'.format(data_description))
 
                 coeff, mse = ridge_regression(X, y, degree, lambda_p=l)
-                plt.scatter(X, predict(X, coeff), color=color[index], linewidths=0.01)
+                plt.plot(X, predict(X, coeff), color=color[index + 1])
 
                 fitting_type, train_error, test_error = cross_validate(X, y, coeff, sigma)
                 summary = ",{}, {}, {}, {}, {}, {}, {}" \

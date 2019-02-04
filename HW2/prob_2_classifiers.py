@@ -4,27 +4,23 @@ from sklearn import svm
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
 # Read data file and parse it
 file = open('Data/data_seed.dat', mode='r').readlines()
 data = [line.split() for line in file]
 data = [float(num) for row in data for num in row]
 data = np.asarray(data).reshape(-1, 8)
 
-
-# Write a program that applies a k-nn classiﬁer to the data with k ∈{1,5,10,15}.
-# Calculate the test error using both leave-one-out validation and 5-fold cross validation.
-# Plot the test error as a function of k. You may use the existing methods in scikit-learn or
-# other libraries for ﬁnding the k-nearest neighbors, but do not use any built-in k-nn classiﬁers.
-# Also, do not use any existing libraries or methods for cross validation.
-# Do any values of k result in underﬁtting or overﬁtting?
+np.random.seed(1)  # For repeatable experiments
 
 class TestClassifiers():
-    def __init__(self, method='svm', n_neighbors=5):
+    def __init__(self, method='svm', n_neighbors=5, class_weight='balanced'):
         self.method = method
         # Dictionary of all the methods that we're going to try and compare
         self.classifier_map = {'svm': svm.SVC(gamma='scale'),
-                               'logistic_regression': LogisticRegression(solver='lbfgs', multi_class='auto',
-                                                                         max_iter=200),
+                               'logistic_regression': LogisticRegression(class_weight=class_weight),
                                'knn': KNeighborsClassifier(n_neighbors=n_neighbors)
                                }
 
@@ -39,17 +35,27 @@ class TestClassifiers():
                 training_data = (k-1) part
                 validation_data = 1 part
                 train on the training_data and report error on validation_data
+
+        k = -1 for leave one out cross validation
         """
         test_errors, train_errors = [], []
+
+        # For leave out cross validation k = n
+        if k == -1:
+            k = len(data)
+
         for _ in range(k):
-            # Copy the original data and shuffle it
             shuffled_data = data.copy()
-            np.random.shuffle(shuffled_data)
+
+            # Do not shuffle data for leave one out cross validation
+            if k != -1:
+                # Copy the original data and shuffle it
+                np.random.shuffle(shuffled_data)
 
             # Divide it into k folds
             split = int(((k - 1) / k) * len(data))
-            train_data = data[:split]
-            test_data = data[split:]
+            train_data = shuffled_data[:split]
+            test_data = shuffled_data[split:]
 
             # Find train_X, train_Y, test_X, test_Y
             train_X = np.asarray(train_data[:, :6])
@@ -68,10 +74,10 @@ class TestClassifiers():
         # Average the error
         avg_train_error = np.round(np.average(np.asarray(train_errors), axis=0), 3)
         avg_test_error = np.round(np.average(np.asarray(test_errors), axis=0), 3)
-        print("The average error of {} is : Train : {}\tTest : {} Overfit : {}".format(self.method,
+        print("The average error of {} is - Train : {}\tTest : {} Overfit : {}".format(self.method,
                                                                                        avg_train_error, avg_test_error,
                                                                                        avg_test_error > avg_train_error))
-        return avg_test_error
+        return avg_test_error, avg_train_error
 
     def fit(self, X, Y):
         """ Fit the training data to the classifier model and compute accuracy """
@@ -87,7 +93,72 @@ class TestClassifiers():
 
 
 if __name__ == '__main__':
-    methods = ['logistic_regression', 'svm', 'knn']
+    color = ['green', 'red', 'grey']
+
+    # Legends
+    patch = [
+        mpatches.Patch(color=color[0], label='Train Error'),
+        mpatches.Patch(color=color[1], label='Test Error')]
+
+    # # Prob 2.2
+    # test_errors = []
+    # train_errors = []
+    # ks = [1, 5, 10, 15]
+    #
+    # # Five fold cross validation : KNN
+    # for k in ks:
+    #     print(k)
+    #     knn = TestClassifiers(method='knn', n_neighbors=k)
+    #     test_error, train_error = knn.cross_validation()
+    #     test_errors.append(test_error)
+    #     train_errors.append(train_error)
+    #
+    # plt.legend(handles=patch)
+    # plt.plot(ks, test_errors, color=color[0])
+    # plt.plot(ks, train_errors, color=color[1])
+    #
+    # plt.title('test error as a function of k with 5 fold cross validation')
+    # plt.xlabel('k')
+    # plt.ylabel('Test Error')
+    # plt.show()
+    #
+    # # Leave one out cross validation
+    # test_errors = []
+    # train_errors = []
+    # for k in ks:
+    #     print(k)
+    #     knn = TestClassifiers(method='knn', n_neighbors=k)
+    #     test_error, train_error = knn.cross_validation(k=-1)
+    #     test_errors.append(test_error)
+    #     train_errors.append(train_error)
+    #
+    # plt.legend(handles=patch)
+    # plt.plot(ks, test_errors, color=color[0])
+    # plt.plot(ks, train_errors, color=color[1])
+    #
+    # plt.title('test error as a function of k with leave one out cross validation')
+    # plt.xlabel('k')
+    # plt.ylabel('Test Error')
+    # plt.show()
+
+    # Prob 2.3
+    # Tuning svm
+    methods = ['svm', 'logistic_regression']
+    class_weights = [None, 'balanced']
     for method in methods:
-        t = TestClassifiers(method=method)
-        t.cross_validation()
+        test_errors = []
+        train_errors = []
+        for class_weight in class_weights:
+            test_classifiers = TestClassifiers(method=method, class_weight=class_weight)
+            test_error, train_error = test_classifiers.cross_validation()
+            test_errors.append(test_error)
+            train_errors.append(train_error)
+
+        plt.legend(handles=patch)
+        plt.plot([0, 1], test_errors, color=color[0])
+        plt.plot([0, 1], train_errors, color=color[1])
+
+        plt.title('Error as a function of balanced and unbalanced weights of classes in {}'.format(method))
+        plt.xlabel('k')
+        plt.ylabel('Error')
+        plt.show()

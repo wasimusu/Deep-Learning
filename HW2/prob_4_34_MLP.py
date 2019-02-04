@@ -54,7 +54,7 @@ if __name__ == '__main__':
         mlp = Perceptron(activation=activation_type)
 
         # Generate the binary number from 000 to 111
-        print("Activation type : ", activation_type)
+        print("\nActivation type : ", activation_type)
         for i in range(2):
             for j in range(2):
                 for k in range(2):
