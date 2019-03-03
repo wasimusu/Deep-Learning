@@ -26,7 +26,8 @@ filename = "model"
 reuse_model = True
 
 l2 = 0.99
-regularization = 'l2'
+l1 = 0.1
+regularization = 'l1'
 if regularization == 'l1': l2 = 0
 
 device = ('cuda:0' if torch.cuda.is_available() else 'cpu:0')
@@ -54,14 +55,21 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.fc1 = nn.Linear(28 * 28, 100)
-        self.fc2 = nn.Linear(100, 10)
+        self.fc2 = nn.Linear(100, 80)
+        self.fc3 = nn.Linear(80, 10)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x):
         # Assuming the image is grayscale image
         x = x.view(-1, 28 * 28)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+
+        x = F.leaky_relu(self.fc1(x))
+        x = self.dropout(x)
+
+        x = F.leaky_relu(self.fc2(x))
+        x = self.dropout(x)
+
+        x = F.leaky_relu(self.fc3(x))
         return x
 
 
@@ -75,12 +83,15 @@ trainset = torchvision.datasets.MNIST(root='./data', transform=transforms, downl
 trainset, validationset = torch.utils.data.random_split(trainset, [50000, 10000])
 testset = torchvision.datasets.MNIST(root='./data', transform=transforms, download=False, train=False)
 
+num_train_samples = trainset.__len__()
+l1 = l1 * 1.0 / num_train_samples
+
 # Data loader for train, test and validation set
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, num_workers=2, shuffle=True)
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
 validationloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
 
-# Use pretrained model97 or train new
+# Use pretrained model or train new
 model = Net()
 if reuse_model == True:
     if os.path.exists(filename):
@@ -94,7 +105,7 @@ model.to(device)
 optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
 criterion = nn.CrossEntropyLoss()
 
-# Train the model97 and periodically compute loss and accuracy on test set
+# Train the model and periodically compute loss and accuracy on test set
 for epoch in range(num_epochs):
     epoch_loss = 0
     for i, data in enumerate(trainloader):
@@ -109,11 +120,12 @@ for epoch in range(num_epochs):
         # Only used for L1 regularization
         if regularization == "l1":
             for param in model.parameters():
-                loss += torch.sum(torch.abs(param))
+                loss += l1 * torch.sum(torch.abs(param)).data.to('cpu').numpy()
 
-        epoch_loss += loss
         loss.backward()
         optimizer.step()
+
+        epoch_loss += loss
 
     print("{} / {} epoch. Loss : {}".format(epoch, num_epochs, "%.2f" % epoch_loss))
 
@@ -122,7 +134,7 @@ for epoch in range(num_epochs):
         print("{} / {} Epoch. Accuracy on validation set : {}".format(epoch, num_epochs,
                                                                       "%.2f" % getAccuracy(validationloader)))
 
-# Save the model97
+# Save the model
 torch.save(model.state_dict(), f=filename)
 
 # Do inference on test set
