@@ -6,7 +6,7 @@ Concepts used :
  - l1 regularization
  - l2 regularization
  - Hyper-parameter tuning
- - Saving and restoring model
+ - Saving and restoring model97
  - Moving models to gpu or cpu
 """
 
@@ -19,35 +19,36 @@ import os
 
 learning_rate = 0.01
 momentum = 0.9
-num_epochs = 10
+num_epochs = 20
 batch_size = 32
 dropout = 0.2
 filename = "model"
 reuse_model = True
 
 l2 = 0.99
-regularization = 'l1'
+regularization = 'l2'
 if regularization == 'l1': l2 = 0
 
 device = ('cuda:0' if torch.cuda.is_available() else 'cpu:0')
 
 
-class Net2(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(28 * 28, 100),
-            F.relu(),
-            nn.Dropout(p=dropout),
-            nn.Linear(100, 10),
-            F.relu(),
-        )
+def getAccuracy(dataLoader):
+    # Check accuracy
+    total, correct = 0, 0
+    for i, data in enumerate(dataLoader):
+        with torch.no_grad():
+            inputs, labels = data
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            outputs = torch.argmax(outputs, dim=1)
+            score = sum(outputs == labels).data.to('cpu').numpy()
 
-    def forward(self, x):
-        # Assuming the image is grayscale image
-        x = x.view(-1, 28 * 28)
-        x = self.fc(x)
-        return x
+            total += batch_size
+            correct += score
+    accuracy = correct * 1.0 / total
+    return accuracy
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -69,14 +70,17 @@ transforms = torchvision.transforms.Compose(
      torchvision.transforms.Normalize((0.5,), (0.5,))]
 )
 
-# Loader for training and test set
-trainset = torchvision.datasets.MNIST(root='./data', transform=transforms, download=True, train=True)
+# Dataset for training, validation and test set
+trainset = torchvision.datasets.MNIST(root='./data', transform=transforms, download=False, train=True)
+trainset, validationset = torch.utils.data.random_split(trainset, [50000, 10000])
+testset = torchvision.datasets.MNIST(root='./data', transform=transforms, download=False, train=False)
+
+# Data loader for train, test and validation set
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, num_workers=2, shuffle=True)
-
-testset = torchvision.datasets.MNIST(root='./data', transform=transforms, download=True, train=False)
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
+validationloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
 
-# Use pretrained model or train new
+# Use pretrained model97 or train new
 model = Net()
 if reuse_model == True:
     if os.path.exists(filename):
@@ -90,7 +94,7 @@ model.to(device)
 optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
 criterion = nn.CrossEntropyLoss()
 
-# Train the model and periodically compute loss and accuracy on test set
+# Train the model97 and periodically compute loss and accuracy on test set
 for epoch in range(num_epochs):
     epoch_loss = 0
     for i, data in enumerate(trainloader):
@@ -111,22 +115,15 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
 
-    print(epoch, "%.2f" % epoch_loss)
+    print("{} / {} epoch. Loss : {}".format(epoch, num_epochs, "%.2f" % epoch_loss))
 
+    # Every two epochs compute validation accuracy
+    if (epoch + 1) % 2 == 0:
+        print("{} / {} Epoch. Accuracy on validation set : {}".format(epoch, num_epochs,
+                                                                      "%.2f" % getAccuracy(validationloader)))
+
+# Save the model97
 torch.save(model.state_dict(), f=filename)
 
-# Check test accuracy
-total, correct = 0, 0
-for i, data in enumerate(testloader):
-    with torch.no_grad():
-        inputs, labels = data
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        outputs = model(inputs)
-        outputs = torch.argmax(outputs, dim=1)
-        score = sum(outputs == labels)
-
-        total += batch_size
-        correct += score
-
-print(total, correct, total * 1.0 / correct)
+# Do inference on test set
+print("Accuracy on test set : {}".format("%.2f" % getAccuracy(testloader)))
