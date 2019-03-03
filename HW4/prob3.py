@@ -17,21 +17,25 @@ import torch.optim as optim
 import torch.nn.functional as F
 import os
 
-learning_rate = 0.01
+# 200 epoch - 0.01. After that 0.005
+# l2 model trained 1100 epochs - reached 97 % accuracy on test set
+
+learning_rate = 0.005
 momentum = 0.9
 num_epochs = 20
 batch_size = 32
 dropout = 0.2
-filename = "model"
 reuse_model = True
+delta_loss = 0.001  # The minimum threshold differences required between two consecutive epoch to continue training
 
 l2 = 0.99
 l1 = 0.1
-regularization = 'l1'
+regularization = 'l2'
 if regularization == 'l1': l2 = 0
 
 device = ('cuda:0' if torch.cuda.is_available() else 'cpu:0')
 
+filename = "model-{}".format(regularization)
 
 def getAccuracy(dataLoader):
     # Check accuracy
@@ -106,7 +110,10 @@ optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
 criterion = nn.CrossEntropyLoss()
 
 # Train the model and periodically compute loss and accuracy on test set
-for epoch in range(num_epochs):
+cur_epoch_loss = 10
+prev_epoch_loss = 20
+epoch = 1
+while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
     epoch_loss = 0
     for i, data in enumerate(trainloader):
         inputs, labels = data
@@ -127,15 +134,19 @@ for epoch in range(num_epochs):
 
         epoch_loss += loss
 
-    print("{} / {} epoch. Loss : {}".format(epoch, num_epochs, "%.2f" % epoch_loss))
+    print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
     # Every two epochs compute validation accuracy
-    if (epoch + 1) % 2 == 0:
-        print("{} / {} Epoch. Accuracy on validation set : {}".format(epoch, num_epochs,
-                                                                      "%.2f" % getAccuracy(validationloader)))
+    if (epoch + 1) % 5 == 0:
+        print("{} Epoch. Accuracy on validation set : {}".format(epoch, "%.3f" % getAccuracy(validationloader)))
 
-# Save the model
-torch.save(model.state_dict(), f=filename)
+    epoch += 1  # Incremenet the epoch counter
+    prev_epoch_loss = cur_epoch_loss
+    cur_epoch_loss = epoch_loss
+
+    # Save the model every ten epochs
+    if (epoch + 1) % 11 == 0:
+        torch.save(model.state_dict(), f=filename)
 
 # Do inference on test set
-print("Accuracy on test set : {}".format("%.2f" % getAccuracy(testloader)))
+print("Accuracy on test set : {}".format("%.3f" % getAccuracy(testloader)))
