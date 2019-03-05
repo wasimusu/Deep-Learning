@@ -17,40 +17,40 @@ import torch.optim as optim
 import torch.nn.functional as F
 import os
 
-# 200 epoch - 0.01. After that 0.005
-# l2 model trained 1100 epochs - reached 97 % accuracy on test set
-
+# Softmax requires especially low learning rates
 learning_rate = 0.005
-momentum = 0.9
+momentum = 0.0
 num_epochs = 20
-batch_size = 32
-dropout = 0.2
+batch_size = 64
+dropout = 0.0
 reuse_model = True
-delta_loss = 0.001  # The minimum threshold differences required between two consecutive epoch to continue training
+delta_loss = 0.0001  # The minimum threshold differences required between two consecutive epoch to continue training
 
 l2 = 0.99
-l1 = 0.1
+l1 = 0.99
 regularization = 'l2'
 if regularization == 'l1': l2 = 0
 
 device = ('cuda:0' if torch.cuda.is_available() else 'cpu:0')
 
-filename = "model-{}".format(regularization)
+filename = "model-softmax-100-{}".format(regularization)
 
 def getAccuracy(dataLoader):
-    # Check accuracy
+    """ Compute accuracy for given dataset """
     total, correct = 0, 0
     for i, data in enumerate(dataLoader):
         with torch.no_grad():
             inputs, labels = data
             inputs = inputs.to(device)
             labels = labels.to(device)
+
             outputs = model(inputs)
             outputs = torch.argmax(outputs, dim=1)
             score = sum(outputs == labels).data.to('cpu').numpy()
 
             total += batch_size
             correct += score
+
     accuracy = correct * 1.0 / total
     return accuracy
 
@@ -59,21 +59,23 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.fc1 = nn.Linear(28 * 28, 100)
-        self.fc2 = nn.Linear(100, 80)
-        self.fc3 = nn.Linear(80, 10)
+        self.fc2 = nn.Linear(100, 100)
+        self.fc3 = nn.Linear(100, 10)
         self.dropout = nn.Dropout(p=dropout)
+        self.softmax = nn.Softmax()
 
     def forward(self, x):
         # Assuming the image is grayscale image
         x = x.view(-1, 28 * 28)
 
-        x = F.leaky_relu(self.fc1(x))
+        x = F.relu(self.fc1(x))
         x = self.dropout(x)
 
-        x = F.leaky_relu(self.fc2(x))
+        x = F.relu(self.fc2(x))
         x = self.dropout(x)
 
-        x = F.leaky_relu(self.fc3(x))
+        x = F.relu(self.fc3(x))
+        x = self.softmax(x)
         return x
 
 
@@ -113,7 +115,7 @@ criterion = nn.CrossEntropyLoss()
 cur_epoch_loss = 10
 prev_epoch_loss = 20
 epoch = 1
-while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
+while abs(prev_epoch_loss - cur_epoch_loss) == delta_loss:
     epoch_loss = 0
     for i, data in enumerate(trainloader):
         inputs, labels = data
@@ -136,17 +138,18 @@ while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
 
     print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
-    # Every two epochs compute validation accuracy
-    if (epoch + 1) % 5 == 0:
+    # Every ten epochs compute validation accuracy
+    if epoch % 10 == 0:
         print("{} Epoch. Accuracy on validation set : {}".format(epoch, "%.3f" % getAccuracy(validationloader)))
+
+    # Save the model every ten epochs
+    if epoch % 10 == 0:
+        torch.save(model.state_dict(), f=filename)
+        print()
 
     epoch += 1  # Incremenet the epoch counter
     prev_epoch_loss = cur_epoch_loss
     cur_epoch_loss = epoch_loss
 
-    # Save the model every ten epochs
-    if (epoch + 1) % 11 == 0:
-        torch.save(model.state_dict(), f=filename)
-
 # Do inference on test set
-print("Accuracy on test set : {}".format("%.3f" % getAccuracy(testloader)))
+print("Accuracy on test set : {}".format("%.4f" % getAccuracy(testloader)))
