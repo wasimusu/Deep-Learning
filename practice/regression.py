@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 learning_rate = 0.001
-num_epochs = 1901
+num_epochs = 2901
 weight_decay = 0.2  # L2 regularization parameter
 
 # If you have the option of GPU and CPU, else no use
@@ -17,11 +17,11 @@ def generate_data(N, sigma):
     noise = np.random.normal(0, sigma, N)
     X = np.random.uniform(0, 3, N)
 
-    ## More work required to make it work on this. Works decently.
-    # Y = X ** 2 + 1 + noise # Compute y from x
+    # More work required to make it work on this. Works decently.
+    Y = X ** 2 + 1 + noise # Compute y from x
 
     # Works better on this
-    Y = X * 2 + 1 + noise  # Compute y from x
+    # Y = X * 2 + 1 + noise  # Compute y from x
 
     return X, Y
 
@@ -57,7 +57,7 @@ for epoch in range(num_epochs):
     loss.backward()
     optimizer.step()
 
-    if epoch % 100 == 0:
+    if epoch % 400 == 0:
         print("Epoch : {}/{}\tLoss : {}".format(epoch, num_epochs, "%.2f" % loss))
 
 # Testing the accuracy of the model
