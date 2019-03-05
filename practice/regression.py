@@ -21,7 +21,7 @@ def generate_data(N, sigma):
     # Y = X ** 2 + 1 + noise # Compute y from x
 
     # Works better on this
-    Y = X * 2 + 1 + noise # Compute y from x
+    Y = X * 2 + 1 + noise  # Compute y from x
 
     return X, Y
 
@@ -33,13 +33,14 @@ class RegNet(nn.Module):
         self.fc2 = nn.Linear(30, 1)
 
     def forward(self, x):
+        """ Feed forward the input """
         x = x.view(-1, 1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
 
 
-# Define the optimizer, loss
+# Instantiate the model, define optimizer and MSE loss
 model = RegNet()
 optimizer = optim.SGD(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 criterion = nn.MSELoss()
@@ -52,7 +53,6 @@ for epoch in range(num_epochs):
     outputs = model(inputs)
 
     model.zero_grad()
-
     loss = criterion(outputs, labels)
     loss.backward()
     optimizer.step()
@@ -72,4 +72,4 @@ with torch.no_grad():
 
     print("Loss : ", loss)
     for i, o, l in zip(inputs, outputs, labels):
-        print("%.2f" %i.data.numpy(), "%.3f" %l.data.numpy(), "%.3f" %o.data.numpy())
+        print("%.2f" % i.data.numpy(), "%.3f" % l.data.numpy(), "%.3f" % o.data.numpy())
