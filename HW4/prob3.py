@@ -95,7 +95,7 @@ l1 = l1 * 1.0 / num_train_samples
 # Data loader for train, test and validation set
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, num_workers=2, shuffle=True)
 testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
-validationloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
+validationloader = torch.utils.data.DataLoader(validationset, batch_size=batch_size, num_workers=2, shuffle=True)
 
 # Use pretrained model or train new
 model = Net()
