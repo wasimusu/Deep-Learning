@@ -1,12 +1,10 @@
 """
-MNIST being trained by using Fully connected layer
+MNIST being trained by using CNN
 Concepts used :
  - Using pretrained networks
- - Dropout
- - l1 regularization
  - l2 regularization
  - Hyper-parameter tuning
- - Saving and restoring model97
+ - Saving and restoring model
  - Moving models to gpu or cpu
 """
 

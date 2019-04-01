@@ -2,26 +2,29 @@ import os
 
 import torch
 import torchvision
-import cv2
-
-# Gather all the images
-# Also has random images
-dir = "./data/AlexNet/"
-filenames = os.listdir(dir)
-filenames = [os.path.join(dir, filename) for filename in filenames]
-
-# Initiate the model with the pretrained weights
-alexnet = torchvision.models.alexnet(pretrained=True)
+import matplotlib.pyplot as plt
 
 # Apply these transformations for all the images in the dataset
+# Convert image to tensor
+# Normalize the image with given mean and standard deviation
+# Center crop the image with the given dimension
 transform = torchvision.transforms.Compose(
     [torchvision.transforms.ToTensor(),
-     torchvision.transforms.Normalize((0.5,), (0.5,))]
+     # torchvision.transforms.Normalize((0.5,), (0.5,)),
+     # torchvision.transforms.CenterCrop((227, 227)),
+     ]
 )
 
+# Read all the images
+dir = "./data/AlexNet/"
 testset = torchvision.datasets.ImageFolder(dir, transform=transform)
 data_loader = torch.utils.data.DataLoader(testset, batch_size=1, shuffle=False)
 
+# Initiate the model with the pretrained weights
+alexnet = torchvision.models.alexnet(pretrained=True)
+alexnet.eval()  # Set the model to evaluation model so that dropout is not applied
+
+print("File ,\tClass, \t\t\t\t\tFirst Layer shape ")
 for i, data in enumerate(data_loader):
     inputs, labels = data
 
@@ -32,16 +35,17 @@ for i, data in enumerate(data_loader):
         # The shape of the output from first layer is [1, 64, 56, 56]
 
         # Showing the first channel of the 64 channel output
-        channel1 = layer1[2].numpy() * 255
-        cv2.imshow("Channel1 ", channel1)
-        cv2.waitKey(1000)
+        channel1 = layer1[2].numpy()
+        plt.imshow(channel1)
+        plt.show()
 
         # Save some channel of the image as output
-        cv2.imwrite(os.path.join("data/results/", i.__str__() + ".jpg"), channel1)
+        filename = os.path.join("data/results/", i.__str__() + ".jpg")
+        plt.imsave(filename, channel1)
 
         # 4.3 Output of the final layer
         output = alexnet(inputs)
         # The shape of output from the final layer is [1, 1000]
-        class_id = torch.argmax(output, dim=1)
+        score, class_id = torch.topk(output, dim=1, k=5)
 
-        print("File : {} \t\tClass : {}\tFirst Layer shape : {} ".format(i, class_id.item(), layer1.size()))
+        print("{}, \t\t{},\t{}".format(i, class_id.numpy().ravel(), layer1.size()))
