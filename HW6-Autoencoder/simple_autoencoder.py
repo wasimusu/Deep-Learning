@@ -8,81 +8,48 @@ import os
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size=29 * 28, output_size=4, batch_size=2):
         super(Encoder, self).__init__()
+        self.batch_size = batch_size
+        self.encoder = nn.Linear(input_size, output_size)
 
-        # Number of filter in each convolution layer
-        first_in = 1
-        second_in = 16
-        third_in = 8
-        third_out = 4
-
-        self.conv1 = nn.Conv2d(in_channels=first_in, out_channels=second_in, kernel_size=(5, 5), stride=1)
-        self.conv2 = nn.Conv2d(in_channels=second_in, out_channels=third_in, kernel_size=(5, 5), stride=1)
-        self.conv3 = nn.Conv2d(in_channels=third_in, out_channels=third_out, kernel_size=(2, 2), stride=1)
-
-        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
-
-    def forward(self, x):
-        code = self.conv1(x)
-        code, indices1 = self.maxpool(code)
-
-        code = self.conv2(code)
-        code, indices2 = self.maxpool(code)
-
-        code = self.conv3(code)
-        code, indices3 = self.maxpool(code)
-
-        return code, [indices1, indices2, indices3]
+    def forward(self, input):
+        input = input.view(batch_size, 1, -1)
+        code = self.encoder(input)
+        return code
 
 
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_size=4, output_size=28 * 28, batch_size=2):
         super(Decoder, self).__init__()
-
-        # Number of filter in each convolution layer
-        first_in = 4
-        second_in = 8
-        third_in = 16
-        third_out = 1
-
-        self.maxunpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
-        self.tconv1 = nn.ConvTranspose2d(in_channels=first_in, out_channels=second_in, kernel_size=2, stride=1)
-        self.tconv2 = nn.ConvTranspose2d(in_channels=second_in, out_channels=third_in, kernel_size=5, stride=1)
-        self.tconv3 = nn.ConvTranspose2d(in_channels=third_in, out_channels=third_out, kernel_size=5, stride=1)
-
-    def forward(self, code, indices):
-        output = self.maxunpool(code, indices[2])
-        output = self.tconv1(output)
-
-        output = self.maxunpool(output, indices[1])
-        output = self.tconv2(output)
-
-        output = self.maxunpool(output, indices[0])
-        output = self.tconv3(output)
-
-        return output
-
-
-class UndercompleteAutoencoder(nn.Module):
-    def __init__(self):
-        super(UndercompleteAutoencoder, self).__init__()
-        self.encoder = Encoder()
-        self.decoder = Decoder()
+        self.batch_size = batch_size
+        self.decoder = nn.Linear(input_size, output_size)
 
     def forward(self, input):
-        code, indices = self.encoder(input)
-        recovered_input = self.decoder(code, indices)
+        recovered_original = self.decoder(input)
+        recovered_original = recovered_original.view(self.batch_size, 28, -1)
+        return recovered_original
+
+
+class Autoencoder(nn.Module):
+    def __init__(self, image_size=28 * 28, hidden_nodes=4):
+        super(Autoencoder, self).__init__()
+        self.encoder = Encoder(input_size=image_size, output_size=hidden_nodes)
+        self.decoder = Decoder(input_size=hidden_nodes, output_size=image_size)
+
+    def forward(self, input):
+        code = self.encoder(input)
+        recovered_input = self.decoder(code)
         return recovered_input
 
 
 transformer = transforms.Compose([
-    torchvision.transforms.Pad((2, 2), 0),
+    torchvision.transforms.Pad((0, 0), 0),
     torchvision.transforms.ToTensor(),
 ])
 
 device = ("cuda" if torch.cuda.is_available() else 'cpu')
-batch_size = 1
+batch_size = 2
 filename = ""
 reuse_model = True
 learning_rate = 0.01
@@ -100,7 +67,7 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_wor
 validationloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
 
 # Defining optimizer and criterion (loss function), optimizer and model
-model = UndercompleteAutoencoder()
+model = Autoencoder()
 optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
 criterion = nn.MSELoss()
 
