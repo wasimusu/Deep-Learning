@@ -83,7 +83,7 @@ transformer = transforms.Compose([
 
 device = ("cuda" if torch.cuda.is_available() else 'cpu')
 batch_size = 1
-filename = ""
+filename = "model/undercomplete_autoencoder"
 reuse_model = True
 learning_rate = 0.01
 momentum = 0.1

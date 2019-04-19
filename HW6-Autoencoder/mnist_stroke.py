@@ -1,7 +1,23 @@
 import urllib.request
 import os
-import gzip
 import tarfile
+import gzip
+
+import torchvision
+import torchvision.transforms as transforms
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+
+device = ('cuda' if torch.cuda.is_available() else 'cpu')
+batch_size = 64
+learning_rate = 0.01
+l2_norm = 0.1
+momentum = 0
+filename = "model/stroke"
+delta_loss = 0.01
+reuse_model = True
 
 
 class MnistStroke:
@@ -47,16 +63,9 @@ class MnistStroke:
             urllib.request.urlretrieve(self.url_digit_thinned, self.digit_fname)
 
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
-device = ('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-class MnistStroker(nn.Module):
+class MnistStrokeClassifier(nn.Module):
     def __init__(self, input_size=10, hidden_size=64, num_layers=1, batch_size=64, bidirectional=False):
-        super(MnistStroker, self).__init__()
+        super(MnistStrokeClassifier, self).__init__()
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
@@ -71,36 +80,94 @@ class MnistStroker(nn.Module):
         self.hidden = self.init_hidden()
 
     def forward(self, x):
-        x = x.view(-1, 1)
-        encoding, self.hidden = self.gru(x, self.hidden)
-        return encoding
+        x = x.view(1, self.batch_size, -1)
+        x, self.hidden = self.lstm(x, self.hidden)
+
+        x = x.view(-1, self.hidden_dim)
+        x = self.classifier(x)
+        x = F.softmax(x)
+        return x
 
     def init_hidden(self):
         return torch.zeros(self.num_layers * self.num_directions, self.batch_size, self.hidden_size)
 
 
-def accuracy(model, data):
-    pass
+def getAccuracy(model, dataLoader):
+    """ Compute accuracy for given dataset """
+    total, correct = 0, 0
+    for i, data in enumerate(dataLoader):
+        with torch.no_grad():
+            inputs, labels = data
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            if inputs.size(0) != batch_size: continue
+
+            outputs = model(inputs)
+            outputs = torch.argmax(outputs, dim=1)
+            score = sum(outputs == labels).data.to('cpu').numpy()
+
+            total += batch_size
+            correct += score
+
+    accuracy = correct * 1.0 / total
+    return accuracy
 
 
-def train():
-    train_data = MnistStroke(train=True, shuffle=True)
+# Defining optimizer and criterion (loss function), optimizer and model
+model = MnistStrokeClassifier()
+optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
+criterion = nn.MSELoss()
 
-    model = MnistStroker()
-    criterion = nn.MSELoss()
-    optimizer = optim.SGD(params=model.parameters(), lr=0.01, weight_decay=0.1)
+# Use pretrained model or train new
+if reuse_model == True:
+    if os.path.exists(filename):
+        model.load_state_dict(torch.load(f=filename))
+    else:
+        print("No pre-trained model detected. Starting fresh model training.")
+model.to(device)
 
-    for epoch in range(10):
-        for data in train_data:
-            model.zero_grad()
+# Train the model and periodically compute loss and accuracy on test set
+cur_epoch_loss = 10
+prev_epoch_loss = 20
+epoch = 1
+while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
+    epoch_loss = 0
+    for i, data in enumerate(trainloader):
+        inputs, labels = data
 
-            inputs, targets = data
-            predictions = model(inputs)
-            loss = criterion(predictions, targets)
+        inputs = inputs.to(device).squeeze(1)
+        labels = labels.to(device)
 
-            loss.backward()
-            optimizer.step()
+        if inputs.size(0) != batch_size: continue
 
+        output = model(inputs)
+
+        model.zero_grad()
+        loss = criterion(output, labels)
+
+        loss.backward(retain_graph=True)
+        optimizer.step()
+
+        epoch_loss += loss
+
+    print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
+
+    # Every ten epochs compute validation accuracy
+    if epoch % 10 == 0:
+        print("{} Epoch. Accuracy on validation set : {}".format(epoch, "%.3f" % getAccuracy(model, validationloader)))
+
+    # Save the model every ten epochs
+    if epoch % 10 == 0:
+        torch.save(model.state_dict(), f=filename)
+        print()
+
+    epoch += 1  # Incremenet the epoch counter
+    prev_epoch_loss = cur_epoch_loss
+    cur_epoch_loss = epoch_loss
+
+# Do inference on test set
+print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, testloader)))
 
 if __name__ == '__main__':
     train_data = MnistStroke(train=True, shuffle=True)
