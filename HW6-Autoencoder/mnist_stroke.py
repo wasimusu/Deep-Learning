@@ -232,7 +232,7 @@ def train(train_mode=False):
 
     # validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
     # trainLoader = MnistStrokeSequence(mode="tran", shuffle=True, batch_size=batch_size)
-    testLoader = MnistStrokeSequence(mode="tran", shuffle=True, batch_size=batch_size)
+    testLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
 
     if train_mode == True:
         # Train the model and periodically compute loss and accuracy on test set
@@ -243,11 +243,8 @@ def train(train_mode=False):
             epoch_loss = 0
             for i in range(len(testLoader)):
                 inputs, labels = testLoader.next()
-                inputs = torch.tensor(inputs).to(device).float()
+                inputs = torch.tensor(inputs).to(device).float().squeeze(1)
                 labels = torch.tensor(labels).to(device)
-
-                inputs = inputs.to(device).squeeze(1)
-                labels = labels.to(device)
 
                 if inputs.size(0) != batch_size: continue
 
@@ -264,12 +261,12 @@ def train(train_mode=False):
             print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
             # Every ten epochs compute validation accuracy
-            if epoch % 10 == 0:
+            if epoch % 2 == 0:
                 print("{} Epoch. Accuracy on validation set : {}".format(epoch,
                                                                          "%.3f" % getAccuracy(model, testLoader)))
 
             # Save the model every ten epochs
-            if epoch % 10 == 0:
+            if epoch % 1 == 0:
                 torch.save(model.state_dict(), f=filename)
 
             epoch += 1  # Incremenet the epoch counter
