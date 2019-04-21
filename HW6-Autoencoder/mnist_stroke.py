@@ -1,17 +1,15 @@
 import urllib.request
 import os
-import gzip
 import tarfile
+import itertools
 
-import torchvision
-import torchvision.transforms as transforms
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 
-device = ('cuda' if torch.cuda.is_available() else 'cpu')
+device = ('cuda' if not torch.cuda.is_available() else 'cpu')
 batch_size = 64
 learning_rate = 0.01
 l2_norm = 0.1
@@ -21,127 +19,12 @@ delta_loss = 0.01
 reuse_model = True
 
 
-class MnistStrokeSequence:
-    def __init__(self, train=True, shuffle=True, batch_size=1, root_dir="data"):
-        """
-        :param train: true if data is to be used for training
-        :param shuffle: randomly shuffle the data or not
-        :param batch_size:
-        :param root_dir: the directory to the save the downloaded data or where the data is already saved
-        """
-        self.train = train
-        self.shuffle = shuffle
-        self.batch_size = batch_size
-        self.root_dir = root_dir
-
-        self.url_sequence = "https://github.com/edwin-de-jong/mnist-digits-stroke-sequence-data/raw/master/sequences.tar.gz"
-        self.sequence_fname = "sequences.tar.gz"
-        self.sequence_fname = os.path.join(self.root_dir, self.sequence_fname)
-
-        # self.url_digit_thinned = "https://github.com/edwin-de-jong/mnist-digits-stroke-sequence-data/raw/master/digit-images-thinned.tar.gz"
-        # self.digit_fname = "digit-images-thinned.tar.gz"
-        # self.digit_fname = os.path.join(self.root_dir, self.digit_fname)
-
-        self.maybe_download()
-
-    def __next__(self):
-        self.inputs = np.load(self.processed_inputs)
-        self.labels = np.load(self.processed_labels)
-
-        return self.inputs[0], self.labels[0]
-
-    def process(self, save_dir=""):
-        self.processed_dir = "data/processed_mnist"
-        self.processed_inputs = os.path.join(self.processed_dir, "inputs.npy")
-        self.processed_labels = os.path.join(self.processed_dir, "labels.npy")
-        if not os.path.exists(self.processed_dir):
-            os.makedirs(self.processed_dir)
-        else:
-            if os.path.exists(self.processed_inputs) and os.path.exists(self.processed_labels):
-                print("Processed files already exist")
-                return
-
-        # If you have not already processed the sequence files, you can process them now
-        self.sequence_dir = "/home/wasim/Documents/sequences"
-        if not os.path.exists(self.sequence_dir):
-            raise ValueError("The file of sequences does not occur at ", self.sequence_dir)
-
-        files = os.listdir(self.sequence_dir)
-        files = [file for file in files if file.__contains__("targetdata")]
-        print("Total number of sample digits : ", len(files))
-
-        inputs, labels = [], []
-        for fname in files[:10]:
-            fname = os.path.join(self.sequence_dir, fname)
-            sequence = open(fname, mode='r', encoding='utf8').read().splitlines()
-            sequence = " ".join(sequence).split()
-            sequence = np.asarray(sequence, np.int8).reshape(-1, 14)
-            label = sequence[:, :10]
-            label = np.mean(label, axis=0)
-            assert sum(label) == 1.0
-            label = np.argsort(label.tolist())[-1]
-
-            input = sequence[:, 10:]
-            labels.append(label)
-            inputs.append(input)
-
-        np.save(self.processed_labels, labels)
-        np.save(self.processed_inputs, inputs)
-
-    def next(self):
-        return self.__next__()
-
-    def maybe_download(self):
-        """ Download the files if they do not exist """
-        if not os.path.exists(self.root_dir):
-            os.makedirs(self.root_dir)
-
-        if not os.path.exists(self.sequence_fname):
-            print("Downloading ... ", self.sequence_fname)
-            urllib.request.urlretrieve(self.url_sequence, self.sequence_fname)
-            # print("Extracting tar.gz and saving them at the same location")
-            # tarfile.open(self.sequence_fname).extractall(self.root_dir)
-
-        # if not os.path.exists(self.digit_fname):
-        #     print("Downloading ... ", self.digit_fname)
-        #     urllib.request.urlretrieve(self.url_digit_thinned, self.digit_fname)
-
-
-class MnistStrokeSequenceClassifier(nn.Module):
-    def __init__(self, input_size=10, hidden_size=64, num_layers=1, batch_size=64, bidirectional=False):
-        super(MnistStrokeSequenceClassifier, self).__init__()
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.bidirectional = bidirectional
-        self.num_directions = 2 if bidirectional else 1
-        self.batch_size = batch_size
-
-        self.gru = nn.GRU(input_size=input_size,
-                          hidden_size=hidden_size,
-                          bidirectional=bidirectional,
-                          num_layers=num_layers)
-
-        self.hidden = self.init_hidden()
-
-    def forward(self, x):
-        x = x.view(1, self.batch_size, -1)
-        x, self.hidden = self.lstm(x, self.hidden)
-
-        x = x.view(-1, self.hidden_dim)
-        x = self.classifier(x)
-        x = F.softmax(x)
-        return x
-
-    def init_hidden(self):
-        return torch.zeros(self.num_layers * self.num_directions, self.batch_size, self.hidden_size)
-
-
 def getAccuracy(model, dataLoader):
     """ Compute accuracy for given dataset """
     total, correct = 0, 0
-    for i, data in enumerate(dataLoader):
+    for i in range(len(dataLoader)):
         with torch.no_grad():
-            inputs, labels = data
+            inputs, labels = dataLoader.next()
             inputs = inputs.to(device)
             labels = labels.to(device)
 
@@ -158,11 +41,186 @@ def getAccuracy(model, dataLoader):
     return accuracy
 
 
-def train():
+class MnistStrokeSequence:
+    def __init__(self, mode="test", shuffle=True, batch_size=1, root_dir="data"):
+        """
+        :param train: true if data is to be used for training
+        :param shuffle: randomly shuffle the data or not
+        :param batch_size:
+        :param root_dir: the directory to the save the downloaded data or where the data is already saved
+        """
+        self.mode = mode
+        self.shuffle = shuffle
+        self.batch_size = batch_size
+        self.root_dir = root_dir
+
+        self.url_sequence = "https://github.com/edwin-de-jong/mnist-digits-stroke-sequence-data/raw/master/sequences.tar.gz"
+        self.sequence_fname = "sequences.tar.gz"
+        self.sequence_fname = os.path.join(self.root_dir, self.sequence_fname)
+
+        # self.url_digit_thinned = "https://github.com/edwin-de-jong/mnist-digits-stroke-sequence-data/raw/master/digit-images-thinned.tar.gz"
+        # self.digit_fname = "digit-images-thinned.tar.gz"
+        # self.digit_fname = os.path.join(self.root_dir, self.digit_fname)
+
+        self.indices = []
+        self.maybe_download()
+        self.process()
+
+    def __next__(self):
+        batch_indices = [self.indices.pop(0) for _ in range(self.batch_size)]
+        inputs = [self.inputs[index] for index in batch_indices]
+        labels = [self.labels[index] for index in batch_indices]
+        inputs = self.pad(inputs)
+
+        inputs = torch.tensor(inputs).reshape(self.batch_size, -1, 4)
+        labels = torch.tensor(labels)
+
+        if len(self.indices) == 0:
+            self.indices = list(range(len(self.labels)))
+
+        return inputs, labels
+
+    def next(self):
+        return self.__next__()
+
+    def process(self):
+        self.processed_dir = "data/processed_mnist"
+        self.processed_inputs = os.path.join(self.processed_dir, "inputs.npy")
+        self.processed_labels = os.path.join(self.processed_dir, "labels.npy")
+        if not os.path.exists(self.processed_dir):
+            os.makedirs(self.processed_dir)
+        else:
+            if os.path.exists(self.processed_inputs) and os.path.exists(self.processed_labels):
+                self.labels = np.load(self.processed_labels)
+                self.inputs = np.load(self.processed_inputs)
+
+                # There are only 70000
+                if self.mode == "train":
+                    start = 0
+                    end = 50000
+                elif self.mode == "test":
+                    start = 50000
+                    end = 60000
+                else:
+                    start = 60000
+                    end = 70000
+
+                self.labels = self.labels[start:end]
+                self.inputs = self.inputs[start:end]
+
+                self.num_batches = len(self.labels) // self.batch_size
+                self.indices = list(range(len(self.labels)))
+                self.indices = self.indices[:self.num_batches * self.batch_size]
+
+                print("Total number of samples : ", len(self.indices))
+
+        # If you have not already processed the sequence files, you can process them now
+        self.sequence_dir = "/home/wasim/Documents/sequences"
+        if not os.path.exists(self.sequence_dir):
+            raise ValueError("The file of sequences does not occur at ", self.sequence_dir)
+
+        files = os.listdir(self.sequence_dir)
+        files = [file for file in files if file.__contains__("targetdata")]
+
+        self.inputs, self.labels = [], []
+        for fname in files:
+            fname = os.path.join(self.sequence_dir, fname)
+
+            sequence = open(fname, mode='r', encoding='utf8').read().splitlines()
+            sequence = " ".join(sequence).split()
+            sequence = np.asarray(sequence, np.int32).reshape(-1, 14)
+
+            label = sequence[:, :10]
+            label = np.mean(label, axis=0)
+            assert sum(label) == 1.0
+            label = np.argsort(label.tolist())[-1]
+
+            input = sequence[:, 10:].flatten()
+            self.labels.append(label)
+            self.inputs.append(input)
+
+        np.save(self.processed_labels, self.labels)
+        np.save(self.processed_inputs, self.inputs)
+
+        # There are only 70000
+        if self.mode == "train":
+            start = 0
+            end = 50000
+        elif self.mode == "test":
+            start = 50000
+            end = 60000
+        else:
+            start = 60000
+            end = 70000
+
+        self.labels = self.labels[start:end]
+        self.inputs = self.inputs[start:end]
+
+        self.num_batches = len(self.labels) // self.batch_size
+        self.indices = list(range(len(self.labels)))
+        self.indices = self.indices[:self.num_batches * self.batch_size]
+
+    def maybe_download(self):
+        """ Download the files if they do not exist """
+        if not os.path.exists(self.root_dir):
+            os.makedirs(self.root_dir)
+
+        if not os.path.exists(self.sequence_fname):
+            print("Downloading ... ", self.sequence_fname)
+            urllib.request.urlretrieve(self.url_sequence, self.sequence_fname)
+            # print("Extracting tar.gz and saving them at the same location")
+            # tarfile.open(self.sequence_fname).extractall(self.root_dir)
+
+    def pad(self, l, fillvalue=0):
+        return list(itertools.zip_longest(*l, fillvalue=fillvalue))
+
+    def __len__(self):
+        return self.num_batches
+
+
+class MnistStrokeClassifier(nn.Module):
+    def __init__(self, input_size=4, hidden_size=64, num_layers=1, batch_size=64, num_classes=10, bidirectional=False):
+        super(MnistStrokeClassifier, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.bidirectional = bidirectional
+        self.num_directions = 2 if bidirectional else 1
+        self.batch_size = batch_size
+
+        self.features = nn.GRU(input_size=input_size,
+                               hidden_size=hidden_size,
+                               bidirectional=bidirectional,
+                               num_layers=num_layers,
+                               batch_first=True,
+                               )
+
+        self.classifier = nn.Linear(hidden_size, num_classes)
+        self.hidden = self.init_hidden()
+
+    def forward(self, x):
+        # Required shape of input for LSTM : (seq_len, batch, input_size)
+        x, self.hidden = self.features(x, self.hidden)
+
+        x = x.contiguous()
+        x = x.mean(1)
+        x = x.view(-1, self.hidden_size)
+
+        x = self.classifier(x)
+
+        x = F.softmax(x, dim=0)
+
+        return x
+
+    def init_hidden(self):
+        return torch.zeros(self.num_layers * self.num_directions, self.batch_size, self.hidden_size,
+                           dtype=torch.float).to(device)
+
+
+def train(train_mode=False):
     # Defining optimizer and criterion (loss function), optimizer and model
-    model = MnistStrokeSequenceClassifier()
+    model = MnistStrokeClassifier(hidden_size=100)
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
-    criterion = nn.MSELoss()
+    criterion = nn.CrossEntropyLoss()  # Input : (N, C) Target : (N)
 
     # Use pretrained model or train new
     if reuse_model == True:
@@ -172,52 +230,60 @@ def train():
             print("No pre-trained model detected. Starting fresh model training.")
     model.to(device)
 
-    # Train the model and periodically compute loss and accuracy on test set
-    cur_epoch_loss = 10
-    prev_epoch_loss = 20
-    epoch = 1
-    while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
-        epoch_loss = 0
-        for i, data in enumerate(trainloader):
-            inputs, labels = data
+    # validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
+    # trainLoader = MnistStrokeSequence(mode="tran", shuffle=True, batch_size=batch_size)
+    testLoader = MnistStrokeSequence(mode="tran", shuffle=True, batch_size=batch_size)
 
-            inputs = inputs.to(device).squeeze(1)
-            labels = labels.to(device)
+    if train_mode == True:
+        # Train the model and periodically compute loss and accuracy on test set
+        cur_epoch_loss = 10
+        prev_epoch_loss = 20
+        epoch = 1
+        while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
+            epoch_loss = 0
+            for i in range(len(testLoader)):
+                inputs, labels = testLoader.next()
+                inputs = torch.tensor(inputs).to(device).float()
+                labels = torch.tensor(labels).to(device)
 
-            if inputs.size(0) != batch_size: continue
+                inputs = inputs.to(device).squeeze(1)
+                labels = labels.to(device)
 
-            output = model(inputs)
+                if inputs.size(0) != batch_size: continue
 
-            model.zero_grad()
-            loss = criterion(output, labels)
+                output = model(inputs)
 
-            loss.backward(retain_graph=True)
-            optimizer.step()
+                model.zero_grad()
+                loss = criterion(output, labels)
 
-            epoch_loss += loss
+                loss.backward(retain_graph=True)
+                optimizer.step()
 
-        print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
+                epoch_loss += loss
 
-        # Every ten epochs compute validation accuracy
-        if epoch % 10 == 0:
-            print("{} Epoch. Accuracy on validation set : {}".format(epoch,
-                                                                     "%.3f" % getAccuracy(model, validationloader)))
+            print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
-        # Save the model every ten epochs
-        if epoch % 10 == 0:
-            torch.save(model.state_dict(), f=filename)
-            print()
+            # Every ten epochs compute validation accuracy
+            if epoch % 10 == 0:
+                print("{} Epoch. Accuracy on validation set : {}".format(epoch,
+                                                                         "%.3f" % getAccuracy(model, testLoader)))
 
-        epoch += 1  # Incremenet the epoch counter
-        prev_epoch_loss = cur_epoch_loss
-        cur_epoch_loss = epoch_loss
+            # Save the model every ten epochs
+            if epoch % 10 == 0:
+                torch.save(model.state_dict(), f=filename)
+
+            epoch += 1  # Incremenet the epoch counter
+            prev_epoch_loss = cur_epoch_loss
+            cur_epoch_loss = epoch_loss
 
     # Do inference on test set
-    print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, testloader)))
+    print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, testLoader)))
 
 
 if __name__ == '__main__':
-    train_data = MnistStrokeSequence(train=True, shuffle=True)
-    train_data.process()
-    inputs, labels = train_data.next()
-    print(inputs, labels)
+    train(train_mode=True)
+
+    # testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=1000)
+    # for _ in range(2):
+    #     for i in range(len(testLoader)):
+    #         testLoader.next()
