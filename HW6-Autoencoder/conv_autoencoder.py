@@ -1,8 +1,11 @@
+" Undercomplete Convolutional Autoencoder "
+
 import torch.nn as nn
 import torch.optim as optim
 import torch
 import torchvision
 import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 
 import os
 
@@ -84,21 +87,21 @@ def train(train_mode=True):
 
     device = ("cuda" if torch.cuda.is_available() else 'cpu')
     batch_size = 1
-    filename = "model/undercomplete_autoencoder"
+    filename = "model/undercomplete_autoencoder_5"
     reuse_model = True
     learning_rate = 0.01
     momentum = 0.1
     delta_loss = 0.001  # Threshold loss difference between consecutive epochs to stop training
 
     # Dataset for training, validation and test set
-    trainset = torchvision.datasets.MNIST(root='./data', transform=transformer, download=False, train=True)
+    trainset = torchvision.datasets.MNIST(root='./data', transform=transformer, download=True, train=True)
     trainset, validationset = torch.utils.data.random_split(trainset, [50000, 10000])
-    testset = torchvision.datasets.MNIST(root='./data', transform=transformer, download=False, train=False)
+    testset = torchvision.datasets.MNIST(root='./data', transform=transformer, download=True, train=False)
 
     # Data loader for train, test and validation set
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, num_workers=2, shuffle=True)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
-    validationloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
+    validationloader = torch.utils.data.DataLoader(testset, batch_size=10, num_workers=2, shuffle=False)
 
     # Defining optimizer and criterion (loss function), optimizer and model
     model = UndercompleteAutoencoder()
@@ -123,7 +126,6 @@ def train(train_mode=True):
             for i, data in enumerate(testloader):
                 inputs, labels = data
                 inputs = inputs.to(device)
-                labels = labels.to(device)
                 output = model(inputs)
 
                 model.zero_grad()
@@ -140,10 +142,18 @@ def train(train_mode=True):
 
             print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
-            # Save the model every ten epochs
-            if epoch % 10 == 0:
-                torch.save(model.state_dict(), f=filename)
-                print()
+            # Save the model every n epochs
+            if epoch == 1 or epoch == 3 or epoch == 5:
+                torch.save(model.state_dict(), f="{}_{}".format(filename, epoch))
+                with torch.no_grad():
+                    for data in validationloader:
+                        inputs, labels = data
+                        inputs = inputs.to(device)
+                        output = model(inputs).cpu()
+                        output = output.view(10, 32, 32)
+                        for i, image in enumerate(output):
+                            plt.imsave("images/{}_{}.jpg".format(i, epoch), image)
+                        break
 
             epoch += 1  # Incremenet the epoch counter
             prev_epoch_loss = cur_epoch_loss

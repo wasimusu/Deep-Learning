@@ -8,15 +8,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-device = ('cuda' if not torch.cuda.is_available() else 'cpu')
-batch_size = 64
-learning_rate = 0.01
-l2_norm = 0.1
-momentum = 0
+use_cuda = torch.cuda.is_available()
+device = ('cuda' if not use_cuda else 'cpu')
+batch_size = 16
+num_layers = 1
+learning_rate = 0.05
+hidden_size = 200
+l2_norm = 0.0  # 0.25
+momentum = 0.0
 filename = "model/stroke"
 delta_loss = 0.01
 reuse_model = True
+dropout_rate = 0.1
 
 
 def getAccuracy(model, dataLoader):
@@ -24,20 +29,25 @@ def getAccuracy(model, dataLoader):
     total, correct = 0, 0
     for i in range(len(dataLoader)):
         with torch.no_grad():
-            inputs, labels = dataLoader.next()
-            inputs = inputs.to(device)
-            labels = labels.to(device)
+            inputs, lens, targets = dataLoader.next()
+            inputs = inputs.float()
+            if use_cuda:
+                inputs = inputs.to(device)
+                targets = targets.to(device)
+
+            # inputs = inputs.squeeze(1)
 
             if inputs.size(0) != batch_size: continue
 
-            outputs = model(inputs)
+            outputs = model(inputs, lens)
             outputs = torch.argmax(outputs, dim=1)
-            score = sum(outputs == labels).data.to('cpu').numpy()
+            score = sum(outputs == targets).data.to('cpu').numpy()
 
             total += batch_size
             correct += score
 
     accuracy = correct * 1.0 / total
+    assert total != 0
     return accuracy
 
 
@@ -66,50 +76,34 @@ class MnistStrokeSequence:
         self.maybe_download()
         self.process()
 
-    def __next__(self):
-        batch_indices = [self.indices.pop(0) for _ in range(self.batch_size)]
-        inputs = [self.inputs[index] for index in batch_indices]
-        labels = [self.labels[index] for index in batch_indices]
-        inputs = self.pad(inputs)
-
-        inputs = torch.tensor(inputs).reshape(self.batch_size, -1, 4)
-        labels = torch.tensor(labels)
-
-        if len(self.indices) == 0:
-            self.indices = list(range(len(self.labels)))
-
-        return inputs, labels
-
-    def next(self):
-        return self.__next__()
-
     def process(self):
         self.processed_dir = "data/processed_mnist"
         self.processed_inputs = os.path.join(self.processed_dir, "inputs.npy")
-        self.processed_labels = os.path.join(self.processed_dir, "labels.npy")
+        self.processed_targets = os.path.join(self.processed_dir, "targets.npy")
+
         if not os.path.exists(self.processed_dir):
             os.makedirs(self.processed_dir)
         else:
-            if os.path.exists(self.processed_inputs) and os.path.exists(self.processed_labels):
-                self.labels = np.load(self.processed_labels)
+            if os.path.exists(self.processed_inputs) and os.path.exists(self.processed_targets):
+                self.targets = np.load(self.processed_targets)
                 self.inputs = np.load(self.processed_inputs)
 
                 # There are only 70000
                 if self.mode == "train":
                     start = 0
-                    end = 50000
+                    end = 1000
                 elif self.mode == "test":
                     start = 50000
-                    end = 60000
+                    end = 51000
                 else:
                     start = 60000
-                    end = 70000
+                    end = 61000
 
-                self.labels = self.labels[start:end]
+                self.targets = self.targets[start:end]
                 self.inputs = self.inputs[start:end]
 
-                self.num_batches = len(self.labels) // self.batch_size
-                self.indices = list(range(len(self.labels)))
+                self.num_batches = len(self.targets) // self.batch_size
+                self.indices = list(range(len(self.targets)))
                 self.indices = self.indices[:self.num_batches * self.batch_size]
 
                 print("Total number of samples : ", len(self.indices))
@@ -122,7 +116,7 @@ class MnistStrokeSequence:
         files = os.listdir(self.sequence_dir)
         files = [file for file in files if file.__contains__("targetdata")]
 
-        self.inputs, self.labels = [], []
+        self.inputs, self.targets = [], []
         for fname in files:
             fname = os.path.join(self.sequence_dir, fname)
 
@@ -136,10 +130,10 @@ class MnistStrokeSequence:
             label = np.argsort(label.tolist())[-1]
 
             input = sequence[:, 10:].flatten()
-            self.labels.append(label)
+            self.targets.append(label)
             self.inputs.append(input)
 
-        np.save(self.processed_labels, self.labels)
+        np.save(self.processed_targets, self.targets)
         np.save(self.processed_inputs, self.inputs)
 
         # There are only 70000
@@ -153,12 +147,44 @@ class MnistStrokeSequence:
             start = 60000
             end = 70000
 
-        self.labels = self.labels[start:end]
+        self.targets = self.targets[start:end]
         self.inputs = self.inputs[start:end]
 
-        self.num_batches = len(self.labels) // self.batch_size
-        self.indices = list(range(len(self.labels)))
+        self.num_batches = len(self.targets) // self.batch_size
+        self.indices = list(range(len(self.targets)))
         self.indices = self.indices[:self.num_batches * self.batch_size]
+
+    def __next__(self):
+        """ Return the next batch of data for training """
+        batch_indices = [self.indices.pop(0) for _ in range(self.batch_size)]
+        inputs = [self.inputs[index] for index in batch_indices]
+        targets = [self.targets[index] for index in batch_indices]
+
+        input_lens = []
+        if self.batch_size > 1:
+            # Sorting everything according to decrease length of sequence
+            input_lens = [len(seq) for seq in inputs]
+
+            # input_lens = sorted(input_lens, reverse=True)
+            # ranks = np.argsort(input_lens)
+            # inputs = [inputs[rank] for rank in ranks]
+            # targets = [targets[rank] for rank in ranks]
+
+            inputs = [input[:min(input_lens)] for input in inputs]
+            inputs = self.pad(inputs)
+
+        # # Convert the array into tensors
+        inputs = torch.tensor(inputs).reshape(self.batch_size, -1, 4)
+        # inputs = torch.tensor(inputs).reshape(self.batch_size, 1, -1)
+        targets = torch.tensor(targets)
+
+        if len(self.indices) < self.batch_size:
+            self.indices = list(range(len(self.targets)))
+
+        return inputs, input_lens, targets
+
+    def next(self):
+        return self.__next__()
 
     def maybe_download(self):
         """ Download the files if they do not exist """
@@ -181,44 +207,55 @@ class MnistStrokeSequence:
 class MnistStrokeClassifier(nn.Module):
     def __init__(self, input_size=4, hidden_size=64, num_layers=1, batch_size=64, num_classes=10, bidirectional=False):
         super(MnistStrokeClassifier, self).__init__()
+
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
         self.num_directions = 2 if bidirectional else 1
         self.batch_size = batch_size
+        self.input_size = input_size
 
-        self.features = nn.GRU(input_size=input_size,
-                               hidden_size=hidden_size,
-                               bidirectional=bidirectional,
-                               num_layers=num_layers,
-                               batch_first=True,
-                               )
+        self.features = nn.LSTM(input_size=input_size,
+                                hidden_size=hidden_size,
+                                bidirectional=bidirectional,
+                                num_layers=num_layers,
+                                batch_first=True)
 
-        self.classifier = nn.Linear(hidden_size, num_classes)
+        self.dropout = nn.Dropout(p=dropout_rate)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_size * self.num_directions, 80),
+            nn.Linear(80, num_classes)
+        )
+
         self.hidden = self.init_hidden()
 
-    def forward(self, x):
+    def forward(self, x, lens):
         # Required shape of input for LSTM : (seq_len, batch, input_size)
+
+        x = x.view(self.batch_size, -1, self.input_size)
+
         x, self.hidden = self.features(x, self.hidden)
-
+        # print("X : ", x.size())
         x = x.contiguous()
-        x = x.mean(1)
-        x = x.view(-1, self.hidden_size)
-
+        x = x[:, -1, :]  # The last hidden state
+        x = F.leaky_relu(x)
+        x = self.dropout(x)
         x = self.classifier(x)
-
         x = F.softmax(x, dim=0)
-
         return x
 
     def init_hidden(self):
-        return torch.zeros(self.num_layers * self.num_directions, self.batch_size, self.hidden_size,
-                           dtype=torch.float).to(device)
+        return (
+            torch.zeros(self.num_layers * self.num_directions, self.batch_size, self.hidden_size, dtype=torch.float).to(
+                device),
+            torch.zeros(self.num_layers * self.num_directions, self.batch_size, self.hidden_size, dtype=torch.float).to(
+                device))
 
 
 def train(train_mode=False):
     # Defining optimizer and criterion (loss function), optimizer and model
-    model = MnistStrokeClassifier(hidden_size=100)
+    model = MnistStrokeClassifier(hidden_size=hidden_size, batch_size=batch_size, num_layers=num_layers)
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
     criterion = nn.CrossEntropyLoss()  # Input : (N, C) Target : (N)
 
@@ -231,8 +268,8 @@ def train(train_mode=False):
     model.to(device)
 
     # validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
-    # trainLoader = MnistStrokeSequence(mode="tran", shuffle=True, batch_size=batch_size)
-    testLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
+    # trainLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
+    testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=batch_size)
 
     if train_mode == True:
         # Train the model and periodically compute loss and accuracy on test set
@@ -242,21 +279,35 @@ def train(train_mode=False):
         while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
             epoch_loss = 0
             for i in range(len(testLoader)):
-                inputs, labels = testLoader.next()
-                inputs = torch.tensor(inputs).to(device).float().squeeze(1)
-                labels = torch.tensor(labels).to(device)
+                inputs, lens, targets = testLoader.next()
+                inputs = inputs.float()
+                if use_cuda:
+                    inputs = inputs.to(device)
+                    targets = targets.to(device)
+                # inputs = inputs.squeeze(1)
+                if inputs.size(0) != batch_size:
+                    print("Breaking")
+                    break
 
-                if inputs.size(0) != batch_size: continue
-
-                output = model(inputs)
-
-                model.zero_grad()
-                loss = criterion(output, labels)
+                output = model(inputs, lens)
+                # print("Output : ", output)
+                optimizer.zero_grad()
+                loss = criterion(output, targets)
 
                 loss.backward(retain_graph=True)
                 optimizer.step()
 
                 epoch_loss += loss
+
+                if i % 100 == 0:
+                    print(i, len(testLoader), "%.3f" % epoch_loss, "%.3f" % getAccuracy(model, testLoader))
+
+                if i % 25 == 0:
+                    print(i, len(testLoader), "%.3f" % epoch_loss)
+                    epoch_loss = 0
+
+                    prev_epoch_loss = cur_epoch_loss
+                    cur_epoch_loss = epoch_loss
 
             print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
@@ -270,8 +321,6 @@ def train(train_mode=False):
                 torch.save(model.state_dict(), f=filename)
 
             epoch += 1  # Incremenet the epoch counter
-            prev_epoch_loss = cur_epoch_loss
-            cur_epoch_loss = epoch_loss
 
     # Do inference on test set
     print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, testLoader)))
@@ -280,7 +329,8 @@ def train(train_mode=False):
 if __name__ == '__main__':
     train(train_mode=True)
 
-    # testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=1000)
+    # testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=64)
     # for _ in range(2):
     #     for i in range(len(testLoader)):
-    #         testLoader.next()
+    #         inputs, lens, targets = testLoader.next()
+    #         print(i, len(testLoader), targets)

@@ -3,13 +3,14 @@ import torch.optim as optim
 import torch
 import torchvision
 import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 
 import os
 
 # Parameters for the Simple Autoencoder and training
 device = ("cuda" if torch.cuda.is_available() else 'cpu')
-batch_size = 2
-filename = ""
+batch_size = 10
+filename = "model/simple_ae"
 reuse_model = True
 learning_rate = 0.01
 momentum = 0.1
@@ -23,7 +24,7 @@ class Encoder(nn.Module):
         self.encoder = nn.Linear(input_size, output_size)
 
     def forward(self, input):
-        input = input.view(batch_size, 1, -1)
+        input = input.view(self.batch_size, 1, -1)
         code = self.encoder(input)
         return code
 
@@ -41,10 +42,10 @@ class Decoder(nn.Module):
 
 
 class Autoencoder(nn.Module):
-    def __init__(self, image_size=28 * 28, hidden_nodes=4):
+    def __init__(self, image_size=28 * 28, hidden_nodes=4, batch_size=16):
         super(Autoencoder, self).__init__()
-        self.encoder = Encoder(input_size=image_size, output_size=hidden_nodes)
-        self.decoder = Decoder(input_size=hidden_nodes, output_size=image_size)
+        self.encoder = Encoder(input_size=image_size, output_size=hidden_nodes, batch_size=batch_size)
+        self.decoder = Decoder(input_size=hidden_nodes, output_size=image_size, batch_size=batch_size)
 
     def forward(self, input):
         code = self.encoder(input)
@@ -52,9 +53,9 @@ class Autoencoder(nn.Module):
         return recovered_input
 
 
-def train(train_mode=True):
+def train(train_mode=True, hidden_nodes=4):
     transformer = transforms.Compose([
-        torchvision.transforms.Pad((0, 0), 0),
+        # torchvision.transforms.Pad((0, 0), 0),
         torchvision.transforms.ToTensor(),
     ])
 
@@ -66,10 +67,10 @@ def train(train_mode=True):
     # Data loader for train, test and validation set
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, num_workers=2, shuffle=True)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
-    validationloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
+    validationloader = torch.utils.data.DataLoader(testset, batch_size=10, num_workers=2, shuffle=False)
 
     # Defining optimizer and criterion (loss function), optimizer and model
-    model = Autoencoder()
+    model = Autoencoder(batch_size=batch_size, hidden_nodes=hidden_nodes)
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
     criterion = nn.MSELoss()
 
@@ -83,22 +84,17 @@ def train(train_mode=True):
 
     if train_mode:
         # Train the model and periodically compute loss and accuracy on test set
-        cur_epoch_loss = 10
-        prev_epoch_loss = 20
-        epoch = 1
-        while abs(prev_epoch_loss - cur_epoch_loss) >= delta_loss:
+        for epoch in range(20):
             epoch_loss = 0
             for i, data in enumerate(testloader):
                 inputs, labels = data
                 inputs = inputs.to(device)
-                labels = labels.to(device)
                 output = model(inputs)
 
                 model.zero_grad()
                 inputs = inputs.squeeze(1).view(batch_size, -1)
                 output = output.view(batch_size, -1).float()
                 assert inputs.shape == output.shape
-                # print("output shape : {},\tinput shape : {}".format(output.shape, inputs.shape))
                 loss = criterion(output, inputs)
 
                 loss.backward()
@@ -108,18 +104,21 @@ def train(train_mode=True):
 
             print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
-            # Save the model every ten epochs
-            if epoch % 10 == 0:
-                torch.save(model.state_dict(), f=filename)
-                print()
+    # Save the model every ten epochs
+    torch.save(model.state_dict(), f="{}_{}".format(filename, hidden_nodes))
+    with torch.no_grad():
+        for data in validationloader:
+            inputs, labels = data
+            inputs = inputs.to(device)
+            output = model(inputs).cpu()
 
-            epoch += 1  # Incremenet the epoch counter
-            prev_epoch_loss = cur_epoch_loss
-            cur_epoch_loss = epoch_loss
-
-    else:
-        pass
+            output = output.view(10, 28, 28)
+            for i, image in enumerate(output):
+                plt.imsave("sae/{}_{}.jpg".format(i, hidden_nodes), image)
+            break
 
 
 if __name__ == '__main__':
-    train(train_mode=True)
+    train(train_mode=True, hidden_nodes=4)
+    train(train_mode=True, hidden_nodes=8)
+    train(train_mode=True, hidden_nodes=16)
