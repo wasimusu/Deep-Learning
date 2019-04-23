@@ -14,7 +14,6 @@ filename = "model/simple_ae"
 reuse_model = True
 learning_rate = 0.01
 momentum = 0.1
-delta_loss = 0.001  # Threshold loss difference between consecutive epochs to stop training
 
 
 class Encoder(nn.Module):
@@ -66,7 +65,6 @@ def train(train_mode=True, hidden_nodes=4):
 
     # Data loader for train, test and validation set
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, num_workers=2, shuffle=True)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, num_workers=2, shuffle=True)
     validationloader = torch.utils.data.DataLoader(testset, batch_size=10, num_workers=2, shuffle=False)
 
     # Defining optimizer and criterion (loss function), optimizer and model
@@ -76,17 +74,17 @@ def train(train_mode=True, hidden_nodes=4):
 
     # Use pretrained model or train new
     if reuse_model == True:
-        if os.path.exists(filename):
-            model.load_state_dict(torch.load(f=filename))
+        if os.path.exists("{}_{}".format(filename, hidden_nodes)):
+            model.load_state_dict(torch.load(f="{}_{}".format(filename, hidden_nodes)))
         else:
             print("No pre-trained model detected. Starting fresh model training.")
     model.to(device)
 
     if train_mode:
         # Train the model and periodically compute loss and accuracy on test set
-        for epoch in range(20):
+        for epoch in range(80):
             epoch_loss = 0
-            for i, data in enumerate(testloader):
+            for i, data in enumerate(trainloader):
                 inputs, labels = data
                 inputs = inputs.to(device)
                 output = model(inputs)
@@ -112,13 +110,19 @@ def train(train_mode=True, hidden_nodes=4):
             inputs = inputs.to(device)
             output = model(inputs).cpu()
 
+            # Save the autoencoded images
             output = output.view(10, 28, 28)
             for i, image in enumerate(output):
-                plt.imsave("sae/{}_{}.jpg".format(i, hidden_nodes), image)
+                plt.imsave("sae/{}_{}.jpg".format(labels[i], hidden_nodes), image)
+
+            # Save the original images
+            original = inputs.view(10, 28, 28).cpu()
+            for i, image in enumerate(original):
+                plt.imsave("sae/{}_original.jpg".format(labels[i]), image)
             break
 
 
 if __name__ == '__main__':
-    train(train_mode=True, hidden_nodes=4)
-    train(train_mode=True, hidden_nodes=8)
-    train(train_mode=True, hidden_nodes=16)
+    train(train_mode=False, hidden_nodes=4)
+    train(train_mode=False, hidden_nodes=8)
+    train(train_mode=False, hidden_nodes=16)
