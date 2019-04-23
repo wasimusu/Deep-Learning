@@ -30,7 +30,7 @@ def getAccuracy(model, dataLoader):
     for i in range(len(dataLoader)):
         with torch.no_grad():
             inputs, lens, targets = dataLoader.next()
-            inputs = inputs.float()
+            # inputs = inputs.float()
             if use_cuda:
                 inputs = inputs.to(device)
                 targets = targets.to(device)
@@ -69,7 +69,10 @@ class MnistStrokeClassifier(nn.Module):
         self.dropout = nn.Dropout(p=dropout_rate)
 
         self.classifier = nn.Sequential(
+            nn.Tanh(),
+            nn.Dropout(p=dropout_rate),
             nn.Linear(hidden_size * self.num_directions, num_classes),
+            torch.nn.Softmax(dim=1),
         )
 
     def forward(self, x, lens):
@@ -84,12 +87,8 @@ class MnistStrokeClassifier(nn.Module):
 
         x, self.hidden = self.features(x, self.hidden)
         # print("X : ", x.size())
-        # x = x.contiguous()
         x = x[:, -1, :]  # The last hidden state
-        x = F.tanh(x)
-        x = self.dropout(x)
         x = self.classifier(x)
-        x = F.softmax(x, dim=0)
         return x
 
     def init_hidden(self):
@@ -117,32 +116,33 @@ def train(train_mode=False):
     model.to(device)
 
     # validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
-    trainLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
+    # trainLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
     testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=batch_size, match_dimension="mean")
 
     if train_mode == True:
         # Train the model and periodically compute loss and accuracy on test set
         for epoch in range(num_epochs):
             epoch_loss = 0
-            for i in range(len(trainLoader)):
-                inputs, lens, targets = trainLoader.next()
-                inputs = inputs.float()
+            for i in range(len(testLoader)):
+                inputs, lens, targets = testLoader.next()
+
                 if use_cuda:
                     inputs = inputs.to(device)
                     targets = targets.to(device)
-                if inputs.size(0) != batch_size:
-                    print("Breaking due to size mismatch")
-                    break
 
-                output = model(inputs, lens)
-                # print("Output : ", output)
+                if inputs.size(0) != batch_size:
+                    continue
+
                 optimizer.zero_grad()
+                output = model(inputs, lens)
                 loss = criterion(output, targets)
 
                 loss.backward(retain_graph=True)
                 optimizer.step()
 
                 epoch_loss += loss
+
+                del loss, output, inputs, targets
 
             print("{} Epoch. Loss : {}\t{}".format(epoch, "%.3f" % epoch_loss, "%.3f" % getAccuracy(model, testLoader)))
 
