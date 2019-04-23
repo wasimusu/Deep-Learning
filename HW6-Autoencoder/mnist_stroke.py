@@ -12,15 +12,17 @@ use_cuda = torch.cuda.is_available()
 device = ('cuda' if not use_cuda else 'cpu')
 batch_size = 2
 num_layers = 1
-learning_rate = 0.01
-hidden_size = 200
-l2_norm = 0.0  #0.25
-momentum = 0.0
+learning_rate = 0.05
+hidden_size = 300
+l2_norm = 0.3
+momentum = 0.00
 filename = "model/stroke"
 reuse_model = False
-dropout_rate = 0.01
-num_epochs = 10000
+dropout_rate = 0.05
+num_epochs = 50
 
+
+# 2 - 1 - 0.05 - 200  - 0.3 - 0.00
 
 def getAccuracy(model, dataLoader):
     """ Compute accuracy for given dataset """
@@ -68,7 +70,6 @@ class MnistStrokeClassifier(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Linear(hidden_size * self.num_directions, num_classes),
-            # nn.Linear(80, num_classes),
         )
 
     def forward(self, x, lens):
@@ -116,15 +117,15 @@ def train(train_mode=False):
     model.to(device)
 
     # validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
-    # trainLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
-    testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=batch_size)
+    trainLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
+    testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=batch_size, match_dimension="mean")
 
     if train_mode == True:
         # Train the model and periodically compute loss and accuracy on test set
         for epoch in range(num_epochs):
             epoch_loss = 0
-            for i in range(len(testLoader)):
-                inputs, lens, targets = testLoader.next()
+            for i in range(len(trainLoader)):
+                inputs, lens, targets = trainLoader.next()
                 inputs = inputs.float()
                 if use_cuda:
                     inputs = inputs.to(device)
@@ -143,23 +144,11 @@ def train(train_mode=False):
 
                 epoch_loss += loss
 
-                # if i % 100 == 0:
-                #     print(i, len(testLoader), "%.3f" % epoch_loss, "%.3f" % getAccuracy(model, testLoader))
-                #
-                # if i % 25 == 0:
-                #     print(i, len(testLoader), "%.3f" % epoch_loss)
-                #     epoch_loss = 0
-
             print("{} Epoch. Loss : {}\t{}".format(epoch, "%.3f" % epoch_loss, "%.3f" % getAccuracy(model, testLoader)))
 
-            # # Every ten epochs compute validation accuracy
-            # if epoch % 2 == 0:
-            #     print("{} Epoch. Accuracy on validation set : {}".format(epoch,
-            #                                                              "%.3f" % getAccuracy(model, testLoader)))
-
-            # # Save the model every ten epochs
-            # if epoch % 1 == 0:
-            #     torch.save(model.state_dict(), f=filename)
+            # Save the model every ten epochs
+            if epoch % 1 == 0:
+                torch.save(model.state_dict(), f=filename)
 
     # Do inference on test set
     print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, testLoader)))
