@@ -125,9 +125,8 @@ class MnistStrokeSequence:
             else:
                 raise ValueError("Choose among : mean, pad and truncate for dimension matching strategy")
 
-        # # Convert the array into tensors
+        # Convert the array into tensors
         inputs = torch.tensor(inputs, dtype=torch.float).reshape(self.batch_size, -1, 4)
-        # inputs = torch.tensor(inputs).reshape(self.batch_size, 1, -1)
         targets = torch.tensor(targets)
 
         if len(self.indices) < self.batch_size:

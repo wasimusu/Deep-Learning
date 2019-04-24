@@ -2,12 +2,11 @@ import os
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from dataset import MnistStrokeSequence
 
+# Hyperparameters of the mnist stroke sequence classifier
 use_cuda = torch.cuda.is_available()
 device = ('cuda' if not use_cuda else 'cpu')
 batch_size = 2
@@ -19,7 +18,7 @@ momentum = 0.00
 filename = "model/stroke"
 reuse_model = True
 dropout_rate = 0.1
-num_epochs = 50
+num_epochs = 70
 
 
 # 2 - 1 - 0.05 - 200  - 0.3 - 0.00
@@ -112,14 +111,14 @@ def train(train_mode=False):
     if reuse_model == True:
         if os.path.exists(filename):
             model.load_state_dict(torch.load(f=filename))
-            print("Starting from previous model")
+            print("Loading saved model")
         else:
             print("No pre-trained model detected. Starting fresh model training.")
     model.to(device)
 
-    # validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
+    validationLoader = MnistStrokeSequence(mode="validate", shuffle=True, batch_size=batch_size)
     # trainLoader = MnistStrokeSequence(mode="train", shuffle=True, batch_size=batch_size)
-    testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=batch_size, match_dimension="mean")
+    # testLoader = MnistStrokeSequence(mode="test", shuffle=True, batch_size=batch_size, match_dimension="mean")
 
     if train_mode == True:
         # Train the model and periodically compute loss and accuracy on test set
@@ -153,8 +152,9 @@ def train(train_mode=False):
                 torch.save(model.state_dict(), f=filename)
 
     # Do inference on test set
-    print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, testLoader)))
+    print("Computing accuracy . . .")
+    print("Accuracy on test set : {}".format("%.4f" % getAccuracy(model, validationLoader)))
 
 
 if __name__ == '__main__':
-    train(train_mode=True)
+    train(train_mode=False)
