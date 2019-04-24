@@ -16,39 +16,54 @@ learning_rate = 0.01
 momentum = 0.1
 
 
-class Encoder(nn.Module):
-    def __init__(self, input_size=29 * 28, output_size=4, batch_size=2):
-        super(Encoder, self).__init__()
+# class Encoder(nn.Module):
+#     def __init__(self, input_size=29 * 28, output_size=4, batch_size=2):
+#         super(Encoder, self).__init__()
+#         self.batch_size = batch_size
+#         self.encoder = nn.Linear(input_size, output_size)
+#
+#     def forward(self, input):
+#         input = input.view(self.batch_size, 1, -1)
+#         code = self.encoder(input)
+#         return code
+#
+#
+# class Decoder(nn.Module):
+#     def __init__(self, input_size=4, output_size=28 * 28, batch_size=2):
+#         super(Decoder, self).__init__()
+#         self.batch_size = batch_size
+#         self.decoder = nn.Linear(input_size, output_size)
+#
+#     def forward(self, input):
+#         recovered_original = self.decoder(input)
+#         recovered_original = recovered_original.view(self.batch_size, 28, -1)
+#         return recovered_original
+#
+#
+# class Autoencoder(nn.Module):
+#     def __init__(self, image_size=28 * 28, hidden_nodes=4, batch_size=16):
+#         super(Autoencoder, self).__init__()
+#         self.encoder = Encoder(input_size=image_size, output_size=hidden_nodes, batch_size=batch_size)
+#         self.decoder = Decoder(input_size=hidden_nodes, output_size=image_size, batch_size=batch_size)
+#
+#     def forward(self, input):
+#         code = self.encoder(input)
+#         recovered_input = self.decoder(code)
+#         return recovered_input
+
+
+class SimpleAE(nn.Module):
+    def __init__(self, image_size=28 * 28, hidden_nodes=4, batch_size=16):
+        super(SimpleAE, self).__init__()
+        self.encoder = nn.Linear(in_features=image_size, out_features=hidden_nodes)
+        self.decoder = nn.Linear(in_features=hidden_nodes, out_features=image_size)
         self.batch_size = batch_size
-        self.encoder = nn.Linear(input_size, output_size)
 
     def forward(self, input):
         input = input.view(self.batch_size, 1, -1)
         code = self.encoder(input)
-        return code
-
-
-class Decoder(nn.Module):
-    def __init__(self, input_size=4, output_size=28 * 28, batch_size=2):
-        super(Decoder, self).__init__()
-        self.batch_size = batch_size
-        self.decoder = nn.Linear(input_size, output_size)
-
-    def forward(self, input):
-        recovered_original = self.decoder(input)
-        recovered_original = recovered_original.view(self.batch_size, 28, -1)
-        return recovered_original
-
-
-class Autoencoder(nn.Module):
-    def __init__(self, image_size=28 * 28, hidden_nodes=4, batch_size=16):
-        super(Autoencoder, self).__init__()
-        self.encoder = Encoder(input_size=image_size, output_size=hidden_nodes, batch_size=batch_size)
-        self.decoder = Decoder(input_size=hidden_nodes, output_size=image_size, batch_size=batch_size)
-
-    def forward(self, input):
-        code = self.encoder(input)
         recovered_input = self.decoder(code)
+        recovered_input = recovered_input.view(self.batch_size, 28, -1)
         return recovered_input
 
 
@@ -68,7 +83,7 @@ def train(train_mode=True, hidden_nodes=4):
     validationloader = torch.utils.data.DataLoader(testset, batch_size=10, num_workers=2, shuffle=False)
 
     # Defining optimizer and criterion (loss function), optimizer and model
-    model = Autoencoder(batch_size=batch_size, hidden_nodes=hidden_nodes)
+    model = SimpleAE(batch_size=batch_size, hidden_nodes=hidden_nodes)
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
     criterion = nn.MSELoss()
 
@@ -102,8 +117,9 @@ def train(train_mode=True, hidden_nodes=4):
 
             print("{} Epoch. Loss : {}".format(epoch, "%.3f" % epoch_loss))
 
-    # Save the model every ten epochs
-    torch.save(model.state_dict(), f="{}_{}".format(filename, hidden_nodes))
+            # Save the model every ten epochs
+            torch.save(model.state_dict(), f="{}_{}".format(filename, hidden_nodes))
+
     with torch.no_grad():
         for data in validationloader:
             inputs, labels = data
@@ -113,16 +129,16 @@ def train(train_mode=True, hidden_nodes=4):
             # Save the autoencoded images
             output = output.view(10, 28, 28)
             for i, image in enumerate(output):
-                plt.imsave("sae/{}_{}.jpg".format(labels[i], hidden_nodes), image)
+                plt.imsave("SimpleAE/{}_{}.jpg".format(labels[i], hidden_nodes), image)
 
             # Save the original images
             original = inputs.view(10, 28, 28).cpu()
             for i, image in enumerate(original):
-                plt.imsave("sae/{}_original.jpg".format(labels[i]), image)
+                plt.imsave("SimpleAE/{}_original.jpg".format(labels[i]), image)
             break
 
 
 if __name__ == '__main__':
-    train(train_mode=False, hidden_nodes=4)
-    train(train_mode=False, hidden_nodes=8)
-    train(train_mode=False, hidden_nodes=16)
+    train(train_mode=True, hidden_nodes=4)
+    # train(train_mode=False, hidden_nodes=8)
+    # train(train_mode=False, hidden_nodes=16)

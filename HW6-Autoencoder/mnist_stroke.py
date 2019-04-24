@@ -12,17 +12,18 @@ use_cuda = torch.cuda.is_available()
 device = ('cuda' if not use_cuda else 'cpu')
 batch_size = 2
 num_layers = 1
-learning_rate = 0.05
+learning_rate = 0.01
 hidden_size = 300
-l2_norm = 0.3
+l2_norm = 0.35
 momentum = 0.00
 filename = "model/stroke"
-reuse_model = False
-dropout_rate = 0.05
+reuse_model = True
+dropout_rate = 0.1
 num_epochs = 50
 
 
 # 2 - 1 - 0.05 - 200  - 0.3 - 0.00
+# 0.01 lr - dropout : 0.1
 
 def getAccuracy(model, dataLoader):
     """ Compute accuracy for given dataset """
@@ -111,6 +112,7 @@ def train(train_mode=False):
     if reuse_model == True:
         if os.path.exists(filename):
             model.load_state_dict(torch.load(f=filename))
+            print("Starting from previous model")
         else:
             print("No pre-trained model detected. Starting fresh model training.")
     model.to(device)
